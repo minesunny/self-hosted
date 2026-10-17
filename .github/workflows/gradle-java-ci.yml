@@ -30,65 +30,27 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-env:
-  RUNNER_TOOL_CACHE: /home/runner/tool-cache
-
 jobs:
   gradle-build:
-    runs-on: [self-hosted, linux]
-    env:
-      RUNNER_TOOL_CACHE: /home/runner/tool-cache
+    runs-on: ${{ vars.RUNNER_TYPE || 'self-hosted' }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Runner Shared Storage & Tool Cache Setup
-        run: |
-          # 1. 修复挂载卷权限并关联 tool-cache 软链接
-          sudo chown -R $(id -u):$(id -g) /home/runner/.m2 /home/runner/tool-cache 2>/dev/null || true
-          mkdir -p /home/runner/tool-cache
-          mkdir -p /home/runner/_work
-          ln -sfn /home/runner/tool-cache /home/runner/_work/_tool 2>/dev/null || true
-          mkdir -p "$HOME/.m2" || true
-          chmod -R 777 "$HOME/.m2" 2>/dev/null || true
-          mkdir -p "$HOME/.gradle"
-
-          # 2. 如果挂载了 gradle-ro-cache，配置 Gradle 本地只读构建缓存
-          if [ -d "/home/runner/gradle-ro-cache" ]; then
-            echo "Found gradle-ro-cache, configuring Gradle build cache..."
-            mkdir -p "$HOME/.gradle/init.d"
-            cat > "$HOME/.gradle/init.d/ro-cache.gradle" <<'EOF'
-          gradle.settingsEvaluated { settings ->
-              settings.buildCache {
-                  local {
-                      directory = new File('/home/runner/gradle-ro-cache')
-                      push = false
-                      enabled = true
-                  }
-              }
-          }
-          EOF
-          fi
-
-          echo "### 💻 Runner 硬件环境与挂载持久卷状态" >> $GITHUB_STEP_SUMMARY
-          echo "| 资源/持久挂载 | 状态与详情 |" >> $GITHUB_STEP_SUMMARY
-          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
-          echo "| CPU / 内存 | $(nproc) vCPU / $(free -h | awk '/Mem:/ {print $2}') (空闲: $(free -h | awk '/Mem:/ {print $4}')) |" >> $GITHUB_STEP_SUMMARY
-          echo "| 工具缓存 (tool-cache) | $(ls -A /home/runner/tool-cache 2>/dev/null | tr '\n' ' ' || echo '首次挂载空目录') |" >> $GITHUB_STEP_SUMMARY
-          echo "| Gradle 只读缓存 (gradle-ro) | $(ls -A /home/runner/gradle-ro-cache 2>/dev/null | head -n 5 | tr '\n' ' ' || echo '未挂载/空') |" >> $GITHUB_STEP_SUMMARY
-          echo "| Maven 缓存 (.m2) | $(ls -A /home/runner/.m2 2>/dev/null | head -n 5 | tr '\n' ' ' || echo '未挂载/空') |" >> $GITHUB_STEP_SUMMARY
-
-      - name: Setup JDK
+      - name: Set up JDK
         uses: actions/setup-java@v4
         with:
-          distribution: temurin
+          distribution: 'temurin'
           java-version: ${{ inputs.java_version || '17' }}
+          cache: ${{ runner.environment == 'github-hosted' && 'gradle' || '' }}
 
       - name: Setup Gradle
+        if: ${{ inputs.project_target == 'demo' }}
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.5'
+          cache-disabled: true
 
       - name: Execute Build (Benchmark or Demo)
         id: run_build
@@ -108,13 +70,9 @@ jobs:
             cd petclinic
             chmod +x gradlew
             
-            echo "::group::2. Compiling, Testing and Packaging with Gradle..."
+            echo "::group::2. Compiling and Packaging with Gradle (bootJar)..."
             BUILD_START=$(date +%s)
-            # 排除依赖外置 Postgres/MySQL 容器的两个 integration test，其余 79 个 Spring 核心测试正常执行
-            ./gradlew build --no-daemon -x checkFormatAot -x checkFormatAotTest -Dspring.docker.compose.enabled=false \
-              --exclude-task :postgresIntegrationTest --exclude-task :mysqlIntegrationTest || \
             ./gradlew bootJar --no-daemon -x checkFormatAot -x checkFormatAotTest
-            
             BUILD_END=$(date +%s)
             BUILD_TIME=$((BUILD_END - BUILD_START))
             TOTAL_TIME=$((BUILD_END - CLONE_START))
@@ -129,7 +87,7 @@ jobs:
             echo "|---|---|" >> $GITHUB_STEP_SUMMARY
             echo "| 测试工程 | [Spring PetClinic (Spring Boot 3 + JPA)](https://github.com/spring-projects/spring-petclinic) |" >> $GITHUB_STEP_SUMMARY
             echo "| 代码拉取耗时 | **${CLONE_TIME}s** |" >> $GITHUB_STEP_SUMMARY
-            echo "| 编译构建与测试耗时 | **${BUILD_TIME}s** |" >> $GITHUB_STEP_SUMMARY
+            echo "| 编译打包耗时 (bootJar) | **${BUILD_TIME}s** |" >> $GITHUB_STEP_SUMMARY
             echo "| 全流程总耗时 | **${TOTAL_TIME}s** |" >> $GITHUB_STEP_SUMMARY
             echo "| 生成产物大小 | **${JAR_SIZE}** ($JAR_FILE) |" >> $GITHUB_STEP_SUMMARY
             

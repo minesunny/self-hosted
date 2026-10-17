@@ -30,42 +30,21 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-env:
-  RUNNER_TOOL_CACHE: /home/runner/tool-cache
-
 jobs:
   node-build:
-    runs-on: [self-hosted, linux]
+    runs-on: ${{ vars.RUNNER_TYPE || 'self-hosted' }}
     permissions:
       contents: read
-    env:
-      RUNNER_TOOL_CACHE: /home/runner/tool-cache
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Runner Shared Storage & Tool Cache Setup
-        run: |
-          # 1. 修复挂载卷权限并关联 tool-cache 软链接
-          sudo chown -R $(id -u):$(id -g) /home/runner/.npm /home/runner/tool-cache 2>/dev/null || true
-          mkdir -p /home/runner/tool-cache
-          mkdir -p /home/runner/_work
-          ln -sfn /home/runner/tool-cache /home/runner/_work/_tool 2>/dev/null || true
-          mkdir -p /home/runner/.npm
-          chmod -R 777 /home/runner/.npm 2>/dev/null || true
-
-          echo "### 💻 Runner 硬件环境与挂载持久卷状态" >> $GITHUB_STEP_SUMMARY
-          echo "| 资源/持久挂载 | 状态与详情 |" >> $GITHUB_STEP_SUMMARY
-          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
-          echo "| CPU / 内存 | $(nproc) vCPU / $(free -h | awk '/Mem:/ {print $2}') (空闲: $(free -h | awk '/Mem:/ {print $4}')) |" >> $GITHUB_STEP_SUMMARY
-          echo "| 工具缓存 (tool-cache) | $(ls -A /home/runner/tool-cache 2>/dev/null | tr '\n' ' ' || echo '首次挂载空目录') |" >> $GITHUB_STEP_SUMMARY
-          echo "| npm 共享缓存 (.npm) | $(ls -A /home/runner/.npm 2>/dev/null | head -n 5 | tr '\n' ' ' || echo '未挂载/空') |" >> $GITHUB_STEP_SUMMARY
-
-      - name: Setup Node
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ inputs.node_version || '22' }}
+          cache: ${{ runner.environment == 'github-hosted' && 'npm' || '' }}
 
       - name: Execute Node Build & Tests (Benchmark or Demo)
         id: run_node
