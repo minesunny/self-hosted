@@ -1,0 +1,69 @@
+name: Docker Build CI (Self-hosted Demo)
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  docker-build:
+    runs-on: [self-hosted, linux]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create Docker demo context
+        run: |
+          mkdir -p docker-demo
+          cat > docker-demo/index.html <<'EOF'
+          <!doctype html>
+          <html>
+            <head><meta charset="utf-8"><title>Docker Demo</title></head>
+            <body><h1>Docker build demo on self-hosted runner</h1></body>
+          </html>
+          EOF
+          cat > docker-demo/Dockerfile <<'EOF'
+          FROM python:3.11-slim
+          WORKDIR /app
+          COPY index.html /app/index.html
+          EXPOSE 8080
+          CMD ["python", "-m", "http.server", "8080"]
+          EOF
+
+      - name: Show Docker version (runner must have Docker)
+        run: docker --version
+
+      - name: Build Docker image
+        run: |
+          docker build -t selfhosted-demo:latest docker-demo
+
+      - name: Run container and smoke-check
+        run: |
+          cid=$(docker run -d -p 8080:8080 selfhosted-demo:latest)
+          echo "container id: $cid"
+          sleep 2
+          if command -v curl >/dev/null 2>&1; then
+            curl --fail --silent http://localhost:8080 | head -n 1
+          else
+            echo "curl not available; skipping HTTP check"
+          fi
+          docker stop $cid || true
+          docker rm $cid || true
+
+      - name: Save Docker image and upload
+        run: |
+          mkdir -p out
+          docker save selfhosted-demo:latest -o out/selfhosted-demo.tar
+
+      - name: Upload Docker image artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image
+          path: out/selfhosted-demo.tar
