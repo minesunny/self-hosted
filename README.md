@@ -21,7 +21,21 @@
 工作流支持以下触发方式：
 - **PR 触发**: 提交向 `main` 分支的 Pull Request 时自动触发。
 - **Push 触发**: 直接推送至 `main` 分支时自动触发。
-- **手动触发**: 支持在 GitHub 仓库 `Actions` 界面或通过 GitHub CLI (`gh workflow run <workflow-name>`) 手动触发 `workflow_dispatch`。
+- **手动触发 (`workflow_dispatch`)**:
+  - **Web 界面**: 在仓库 Actions 标签页中选择工作流，点击右侧 **"Run workflow"** 按钮，可输入自定义参数（如 JDK / Node.js 版本、Docker Tag、是否 Clean 构建等）运行。
+  - **GitHub CLI 命令行**:
+    ```bash
+    # 手动触发 Node.js CI (可选参数 -f node_version=20)
+    gh workflow run nodejs-ci.yml --ref main -f node_version=22
+
+    # 手动触发 Docker Build CI (可选参数 -f image_tag=v1.0.0 -f skip_test=false)
+    gh workflow run docker-build-ci.yml --ref main -f image_tag=latest
+
+    # 手动触发 Gradle Java CI (可选参数 -f java_version=21 -f clean_build=true)
+    gh workflow run gradle-java-ci.yml --ref main -f java_version=21
+    ```
+- **外部事件触发 (`repository_dispatch`)**:
+  - 支持通过 GitHub API 发送外部事件进行手动触发（如 `manual-node-build`、`manual-docker-build`、`manual-gradle-build`）。
 
 ## 如何接入 Self-Hosted Runner (Linux)
 
