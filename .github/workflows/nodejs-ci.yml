@@ -30,30 +30,37 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+env:
+  RUNNER_TOOL_CACHE: /home/runner/tool-cache
+
 jobs:
   node-build:
     runs-on: [self-hosted, linux]
     permissions:
       contents: read
+    env:
+      RUNNER_TOOL_CACHE: /home/runner/tool-cache
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Runner System Resources & Environment Setup
+      - name: Runner Shared Storage & Tool Cache Setup
         run: |
-          # 修复共享 PVC 或 root 残留目录权限并设置独立临时 cache
-          sudo chown -R $(id -u):$(id -g) "$HOME/.npm" 2>/dev/null || true
-          mkdir -p "$RUNNER_TEMP/.npm-cache"
-          echo "npm_config_cache=$RUNNER_TEMP/.npm-cache" >> $GITHUB_ENV
+          # 1. 修复挂载卷权限并关联 tool-cache 软链接
+          sudo chown -R $(id -u):$(id -g) /home/runner/.npm /home/runner/tool-cache 2>/dev/null || true
+          mkdir -p /home/runner/tool-cache
+          mkdir -p /home/runner/_work
+          ln -sfn /home/runner/tool-cache /home/runner/_work/_tool 2>/dev/null || true
+          mkdir -p /home/runner/.npm
+          chmod -R 777 /home/runner/.npm 2>/dev/null || true
 
-          echo "### 💻 Runner 硬件环境与系统资源" >> $GITHUB_STEP_SUMMARY
-          echo "| 硬件指标 | 配置详情 |" >> $GITHUB_STEP_SUMMARY
+          echo "### 💻 Runner 硬件环境与挂载持久卷状态" >> $GITHUB_STEP_SUMMARY
+          echo "| 资源/持久挂载 | 状态与详情 |" >> $GITHUB_STEP_SUMMARY
           echo "|---|---|" >> $GITHUB_STEP_SUMMARY
-          echo "| CPU 核心数 | $(nproc) vCPU |" >> $GITHUB_STEP_SUMMARY
-          echo "| 内存总量 (可用) | $(free -h | awk '/Mem:/ {print $2}') (空闲: $(free -h | awk '/Mem:/ {print $4}')) |" >> $GITHUB_STEP_SUMMARY
-          echo "| 根分区磁盘 (可用) | $(df -h / | awk 'NR==2 {print $2}') (可用: $(df -h / | awk 'NR==2 {print $4}')) |" >> $GITHUB_STEP_SUMMARY
-          echo "| 操作系统与内核 | $(uname -sr) |" >> $GITHUB_STEP_SUMMARY
+          echo "| CPU / 内存 | $(nproc) vCPU / $(free -h | awk '/Mem:/ {print $2}') (空闲: $(free -h | awk '/Mem:/ {print $4}')) |" >> $GITHUB_STEP_SUMMARY
+          echo "| 工具缓存 (tool-cache) | $(ls -A /home/runner/tool-cache 2>/dev/null | tr '\n' ' ' || echo '首次挂载空目录') |" >> $GITHUB_STEP_SUMMARY
+          echo "| npm 共享缓存 (.npm) | $(ls -A /home/runner/.npm 2>/dev/null | head -n 5 | tr '\n' ' ' || echo '未挂载/空') |" >> $GITHUB_STEP_SUMMARY
 
       - name: Setup Node
         uses: actions/setup-node@v4
