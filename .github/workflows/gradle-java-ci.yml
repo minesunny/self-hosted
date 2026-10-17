@@ -38,8 +38,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Runner System Resources
+      - name: Runner System Resources & Permission Setup
         run: |
+          # 修复共享 PVC 或 root 残留目录权限
+          sudo chown -R $(id -u):$(id -g) "$HOME/.m2" "$HOME/.gradle" 2>/dev/null || true
+          mkdir -p "$HOME/.m2" || true
+          chmod -R 777 "$HOME/.m2" 2>/dev/null || true
+
           echo "### 💻 Runner 硬件环境与系统资源" >> $GITHUB_STEP_SUMMARY
           echo "| 硬件指标 | 配置详情 |" >> $GITHUB_STEP_SUMMARY
           echo "|---|---|" >> $GITHUB_STEP_SUMMARY
@@ -170,4 +175,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: gradle-build-output
-          path: ${{ env.ARTIFACT_PATH }}
+          path: ${{ env.ARTIFACT_PATH || 'README.md' }}
