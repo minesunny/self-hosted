@@ -1,0 +1,102 @@
+name: Gradle Java CI (Self-hosted Demo)
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  gradle-build:
+    runs-on: [self-hosted, linux]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install SDKMAN and Gradle (public)
+        run: |
+          curl -s "https://get.sdkman.io" | bash
+          source "$HOME/.sdkman/bin/sdkman-init.sh"
+          sdk install gradle 8.4.1 || true
+
+      - name: Create Gradle demo project
+        run: |
+          mkdir -p gradle-demo
+          cat > gradle-demo/settings.gradle <<'EOF'
+          rootProject.name = 'gradle-demo'
+          EOF
+          cat > gradle-demo/build.gradle <<'EOF'
+          plugins {
+              id 'java'
+              id 'application'
+          }
+          version = '1.0'
+          repositories {
+              mavenCentral()
+          }
+          application {
+              mainClass = 'demo.App'
+          }
+          dependencies {
+              testImplementation 'org.junit.jupiter:junit-jupiter:5.10.0'
+          }
+          test {
+              useJUnitPlatform()
+          }
+          jar {
+              manifest {
+                  attributes 'Main-Class': 'demo.App'
+              }
+          }
+          EOF
+          mkdir -p gradle-demo/src/main/java/demo
+          cat > gradle-demo/src/main/java/demo/App.java <<'EOF'
+          package demo;
+          public class App {
+              public static void main(String[] args) {
+                  System.out.println("Gradle demo app running on self-hosted runner");
+              }
+          }
+          EOF
+          mkdir -p gradle-demo/src/test/java/demo
+          cat > gradle-demo/src/test/java/demo/AppTest.java <<'EOF'
+          package demo;
+          import org.junit.jupiter.api.Test;
+          import static org.junit.jupiter.api.Assertions.*;
+          public class AppTest {
+              @Test
+              void smoke() {
+                  assertTrue(true);
+              }
+          }
+          EOF
+
+      - name: Build with Gradle
+        run: |
+          cd gradle-demo
+          gradle --version
+          gradle clean build --no-daemon
+
+      - name: Run built JAR (sanity)
+        run: |
+          JAR=$(ls gradle-demo/build/libs/*.jar | head -n1)
+          echo "Found jar: $JAR"
+          java -jar $JAR
+
+      - name: Upload Gradle artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-demo-build
+          path: gradle-demo/build/libs
