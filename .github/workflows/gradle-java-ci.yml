@@ -41,11 +41,10 @@ jobs:
           distribution: temurin
           java-version: ${{ inputs.java_version || '21' }}
 
-      - name: Install SDKMAN and Gradle (public)
-        run: |
-          curl -s "https://get.sdkman.io" | bash
-          source "$HOME/.sdkman/bin/sdkman-init.sh"
-          sdk install gradle 8.4.1 || true
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.4.1'
 
       - name: Create Gradle demo project
         run: |

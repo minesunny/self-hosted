@@ -50,8 +50,14 @@ jobs:
           CMD ["python", "-m", "http.server", "8080"]
           EOF
 
-      - name: Show Docker version (runner must have Docker)
-        run: docker --version
+      - name: Check Docker Daemon
+        run: |
+          docker --version
+          if ! docker info >/dev/null 2>&1; then
+            echo "::error::Docker Daemon 无法连接 (/var/run/docker.sock 不存在或无访问权限)。"
+            echo "::warning::若在 Kubernetes ARC 环境中运行，需在 ARC Runner 部署中启用 DinD (containerMode: { type: 'dind' }) 或挂载宿主机 docker.sock。"
+            exit 1
+          fi
 
       - name: Build Docker image
         run: |
