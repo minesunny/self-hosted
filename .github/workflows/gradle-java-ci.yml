@@ -6,6 +6,22 @@ on:
   pull_request:
     branches: [ main ]
   workflow_dispatch:
+    inputs:
+      java_version:
+        description: 'JDK version'
+        required: false
+        default: '21'
+        type: choice
+        options:
+          - '21'
+          - '17'
+      clean_build:
+        description: 'Run clean build'
+        required: false
+        default: true
+        type: boolean
+  repository_dispatch:
+    types: [manual-gradle-build]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
@@ -19,11 +35,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup JDK 21
+      - name: Setup JDK
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: ${{ inputs.java_version || '21' }}
 
       - name: Install SDKMAN and Gradle (public)
         run: |
@@ -87,7 +103,11 @@ jobs:
         run: |
           cd gradle-demo
           gradle --version
-          gradle clean build --no-daemon
+          if [ "${{ inputs.clean_build }}" = "false" ]; then
+            gradle build --no-daemon
+          else
+            gradle clean build --no-daemon
+          fi
 
       - name: Run built JAR (sanity)
         run: |
