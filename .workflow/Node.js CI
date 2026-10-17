@@ -1,0 +1,63 @@
+name: Node.js CI (Self-hosted Demo)
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  node-build:
+    runs-on: [self-hosted, linux]
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Create Node demo project
+        run: |
+          mkdir -p node-demo
+          cat > node-demo/package.json <<'EOF'
+          {
+            "name": "node-demo",
+            "version": "1.0.0",
+            "private": true,
+            "scripts": {
+              "start": "node index.js",
+              "test": "node -e \"console.log('test ok');\""
+            }
+          }
+          EOF
+          cat > node-demo/index.js <<'EOF'
+          console.log('Node.js demo running on self-hosted runner');
+          console.log('Node version:', process.version);
+          EOF
+
+      - name: Install (no private deps)
+        working-directory: node-demo
+        run: npm ci --no-audit --no-fund || npm install
+
+      - name: Run tests and start
+        working-directory: node-demo
+        run: |
+          npm test
+          node index.js
+
+      - name: Upload Node demo folder
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: node-demo
+          path: node-demo
