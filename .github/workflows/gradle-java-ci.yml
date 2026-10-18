@@ -1,4 +1,4 @@
-name: Gradle Java CI (Self-hosted Demo)
+name: Gradle Java CI (Self-hosted Demo & Benchmark)
 
 on:
   push:
@@ -7,19 +7,22 @@ on:
     branches: [ main ]
   workflow_dispatch:
     inputs:
-      java_version:
-        description: 'JDK version'
+      project_target:
+        description: '测试工程规模 / Project Scale'
         required: false
-        default: '21'
+        default: 'spring-petclinic'
         type: choice
         options:
-          - '21'
-          - '17'
-      clean_build:
-        description: 'Run clean build'
+          - 'spring-petclinic'
+          - 'demo'
+      java_version:
+        description: 'JDK 版本 / JDK Version'
         required: false
-        default: true
-        type: boolean
+        default: '17'
+        type: choice
+        options:
+          - '17'
+          - '21'
   repository_dispatch:
     types: [manual-gradle-build]
 
@@ -29,30 +32,75 @@ concurrency:
 
 jobs:
   gradle-build:
-    runs-on: [self-hosted, linux]
+    runs-on: ${{ vars.RUNNER_TYPE || 'self-hosted' }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup JDK
+      - name: Set up JDK
         uses: actions/setup-java@v4
         with:
-          distribution: temurin
-          java-version: ${{ inputs.java_version || '21' }}
+          distribution: 'temurin'
+          java-version: ${{ inputs.java_version || '17' }}
+          cache: ${{ runner.environment == 'github-hosted' && 'gradle' || '' }}
 
       - name: Setup Gradle
+        if: ${{ inputs.project_target == 'demo' }}
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.5'
+          cache-disabled: true
 
-      - name: Create Gradle demo project
+      - name: Execute Build (Benchmark or Demo)
+        id: run_build
         run: |
-          mkdir -p gradle-demo
-          cat > gradle-demo/settings.gradle <<'EOF'
+          TARGET="${{ inputs.project_target || 'spring-petclinic' }}"
+          echo "Selected Target: $TARGET"
+          
+          if [ "$TARGET" = "spring-petclinic" ]; then
+            echo "::group::1. Cloning Spring PetClinic (depth=1)..."
+            CLONE_START=$(date +%s)
+            git clone --depth 1 https://github.com/spring-projects/spring-petclinic.git petclinic
+            CLONE_END=$(date +%s)
+            CLONE_TIME=$((CLONE_END - CLONE_START))
+            echo "Clone time: ${CLONE_TIME}s"
+            echo "::endgroup::"
+            
+            cd petclinic
+            chmod +x gradlew
+            
+            echo "::group::2. Compiling and Packaging with Gradle (bootJar)..."
+            BUILD_START=$(date +%s)
+            ./gradlew bootJar --no-daemon -x checkFormatAot -x checkFormatAotTest --stacktrace
+            BUILD_END=$(date +%s)
+            BUILD_TIME=$((BUILD_END - BUILD_START))
+            TOTAL_TIME=$((BUILD_END - CLONE_START))
+            echo "Build time: ${BUILD_TIME}s"
+            echo "::endgroup::"
+            
+            JAR_FILE=$(ls build/libs/*.jar | grep -v 'plain' | head -n1 || ls build/libs/*.jar | head -n1)
+            JAR_SIZE=$(du -sh "$JAR_FILE" | awk '{print $1}')
+            
+            echo "### 📊 Java 编译性能测试报告 (Spring PetClinic)" >> $GITHUB_STEP_SUMMARY
+            echo "| 指标项 | 评测数据 |" >> $GITHUB_STEP_SUMMARY
+            echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+            echo "| 测试工程 | [Spring PetClinic (Spring Boot 3 + JPA)](https://github.com/spring-projects/spring-petclinic) |" >> $GITHUB_STEP_SUMMARY
+            echo "| 代码拉取耗时 | **${CLONE_TIME}s** |" >> $GITHUB_STEP_SUMMARY
+            echo "| 编译打包耗时 (bootJar) | **${BUILD_TIME}s** |" >> $GITHUB_STEP_SUMMARY
+            echo "| 全流程总耗时 | **${TOTAL_TIME}s** |" >> $GITHUB_STEP_SUMMARY
+            echo "| 生成产物大小 | **${JAR_SIZE}** ($JAR_FILE) |" >> $GITHUB_STEP_SUMMARY
+            
+            cd ..
+            echo "ARTIFACT_PATH=petclinic/build/libs" >> $GITHUB_ENV
+          else
+            echo "::group::Running Lightweight Demo Project..."
+            BUILD_START=$(date +%s)
+            mkdir -p gradle-demo
+            cat > gradle-demo/settings.gradle <<'EOF'
           rootProject.name = 'gradle-demo'
           EOF
-          cat > gradle-demo/build.gradle <<'EOF'
+            cat > gradle-demo/build.gradle <<'EOF'
           plugins {
               id 'java'
               id 'application'
@@ -76,8 +124,8 @@ jobs:
               }
           }
           EOF
-          mkdir -p gradle-demo/src/main/java/demo
-          cat > gradle-demo/src/main/java/demo/App.java <<'EOF'
+            mkdir -p gradle-demo/src/main/java/demo
+            cat > gradle-demo/src/main/java/demo/App.java <<'EOF'
           package demo;
           public class App {
               public static void main(String[] args) {
@@ -85,8 +133,8 @@ jobs:
               }
           }
           EOF
-          mkdir -p gradle-demo/src/test/java/demo
-          cat > gradle-demo/src/test/java/demo/AppTest.java <<'EOF'
+            mkdir -p gradle-demo/src/test/java/demo
+            cat > gradle-demo/src/test/java/demo/AppTest.java <<'EOF'
           package demo;
           import org.junit.jupiter.api.Test;
           import static org.junit.jupiter.api.Assertions.*;
@@ -97,26 +145,22 @@ jobs:
               }
           }
           EOF
-
-      - name: Build with Gradle
-        run: |
-          cd gradle-demo
-          gradle --version
-          if [ "${{ inputs.clean_build }}" = "false" ]; then
-            gradle build --no-daemon
-          else
+            cd gradle-demo
             gradle clean build --no-daemon
+            JAR=$(ls build/libs/*.jar | head -n1)
+            java -jar $JAR
+            cd ..
+            BUILD_END=$(date +%s)
+            DURATION=$((BUILD_END - BUILD_START))
+            echo "### 📊 Java Demo 构建报告" >> $GITHUB_STEP_SUMMARY
+            echo "| 全流程耗时 | **${DURATION}s** |" >> $GITHUB_STEP_SUMMARY
+            echo "ARTIFACT_PATH=gradle-demo/build/libs" >> $GITHUB_ENV
+            echo "::endgroup::"
           fi
 
-      - name: Run built JAR (sanity)
-        run: |
-          JAR=$(ls gradle-demo/build/libs/*.jar | head -n1)
-          echo "Found jar: $JAR"
-          java -jar $JAR
-
-      - name: Upload Gradle artifacts
+      - name: Upload Gradle build artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: gradle-demo-build
-          path: gradle-demo/build/libs
+          name: gradle-build-output
+          path: ${{ env.ARTIFACT_PATH || 'README.md' }}
