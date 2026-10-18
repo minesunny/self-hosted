@@ -72,7 +72,7 @@ jobs:
             
             echo "::group::2. Compiling and Packaging with Gradle (bootJar)..."
             BUILD_START=$(date +%s)
-            ./gradlew bootJar --no-daemon -x checkFormatAot -x checkFormatAotTest
+            ./gradlew bootJar --no-daemon -x checkFormatAot -x checkFormatAotTest --stacktrace
             BUILD_END=$(date +%s)
             BUILD_TIME=$((BUILD_END - BUILD_START))
             TOTAL_TIME=$((BUILD_END - CLONE_START))
