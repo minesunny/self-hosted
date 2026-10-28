@@ -26,7 +26,7 @@ concurrency:
 
 jobs:
   docker-build:
-    runs-on: [self-hosted, linux]
+    runs-on: ${{ vars.RUNNER_TYPE || 'self-hosted' }}
 
     steps:
       - name: Checkout

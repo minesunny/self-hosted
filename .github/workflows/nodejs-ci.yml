@@ -1,4 +1,4 @@
-name: Node.js CI (Self-hosted Demo)
+name: Node.js CI (Self-hosted Demo & Benchmark)
 
 on:
   push:
@@ -7,15 +7,22 @@ on:
     branches: [ main ]
   workflow_dispatch:
     inputs:
+      project_target:
+        description: '测试工程规模 / Project Scale'
+        required: false
+        default: 'fastify'
+        type: choice
+        options:
+          - 'fastify'
+          - 'demo'
       node_version:
-        description: 'Node.js version'
+        description: 'Node.js 版本 / Node Version'
         required: false
         default: '22'
         type: choice
         options:
           - '22'
           - '20'
-          - '18'
   repository_dispatch:
     types: [manual-node-build]
 
@@ -25,7 +32,7 @@ concurrency:
 
 jobs:
   node-build:
-    runs-on: [self-hosted, linux]
+    runs-on: ${{ vars.RUNNER_TYPE || 'self-hosted' }}
     permissions:
       contents: read
 
@@ -33,15 +40,71 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ inputs.node_version || '22' }}
+          cache: ${{ runner.environment == 'github-hosted' && 'npm' || '' }}
 
-      - name: Create Node demo project
+      - name: Execute Node Build & Tests (Benchmark or Demo)
+        id: run_node
         run: |
-          mkdir -p node-demo
-          cat > node-demo/package.json <<'EOF'
+          TARGET="${{ inputs.project_target || 'fastify' }}"
+          echo "Selected Target: $TARGET"
+
+          if [ "$TARGET" = "fastify" ]; then
+            echo "::group::1. Cloning Fastify (depth=1)..."
+            CLONE_START=$(date +%s)
+            git clone --depth 1 https://github.com/fastify/fastify.git fastify-bench
+            CLONE_END=$(date +%s)
+            CLONE_TIME=$((CLONE_END - CLONE_START))
+            echo "Clone time: ${CLONE_TIME}s"
+            echo "::endgroup::"
+
+            cd fastify-bench
+
+            echo "::group::2. Installing Dependencies (npm install)..."
+            INSTALL_START=$(date +%s)
+            npm install --ignore-scripts
+            INSTALL_END=$(date +%s)
+            INSTALL_TIME=$((INSTALL_END - INSTALL_START))
+            echo "Install time: ${INSTALL_TIME}s"
+            echo "::endgroup::"
+
+            echo "::group::3. Running TypeScript Type Tests..."
+            TYPE_START=$(date +%s)
+            npm run test:types
+            TYPE_END=$(date +%s)
+            TYPE_TIME=$((TYPE_END - TYPE_START))
+            echo "TypeScript test time: ${TYPE_TIME}s"
+            echo "::endgroup::"
+
+            echo "::group::4. Running Unit Tests Suite..."
+            UNIT_START=$(date +%s)
+            npm run unit
+            UNIT_END=$(date +%s)
+            UNIT_TIME=$((UNIT_END - UNIT_START))
+            TOTAL_TIME=$((UNIT_END - CLONE_START))
+            echo "Unit test time: ${UNIT_TIME}s"
+            echo "::endgroup::"
+
+            echo "### 📊 Node.js 编译与测试性能报告 (Fastify)" >> $GITHUB_STEP_SUMMARY
+            echo "| 指标项 | 评测数据 |" >> $GITHUB_STEP_SUMMARY
+            echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+            echo "| 测试工程 | [Fastify (高并发异步框架 + TypeScript)](https://github.com/fastify/fastify) |" >> $GITHUB_STEP_SUMMARY
+            echo "| 代码拉取耗时 | **${CLONE_TIME}s** |" >> $GITHUB_STEP_SUMMARY
+            echo "| 依赖安装 (npm install) | **${INSTALL_TIME}s** |" >> $GITHUB_STEP_SUMMARY
+            echo "| TypeScript 类型推导与检查 | **${TYPE_TIME}s** |" >> $GITHUB_STEP_SUMMARY
+            echo "| 单元测试执行耗时 | **${UNIT_TIME}s** |" >> $GITHUB_STEP_SUMMARY
+            echo "| 全流程总耗时 | **${TOTAL_TIME}s** |" >> $GITHUB_STEP_SUMMARY
+
+            cd ..
+            echo "ARTIFACT_PATH=fastify-bench/package.json" >> $GITHUB_ENV
+          else
+            echo "::group::Running Lightweight Demo..."
+            BUILD_START=$(date +%s)
+            mkdir -p node-demo
+            cat > node-demo/package.json <<'EOF'
           {
             "name": "node-demo",
             "version": "1.0.0",
@@ -52,24 +115,26 @@ jobs:
             }
           }
           EOF
-          cat > node-demo/index.js <<'EOF'
+            cat > node-demo/index.js <<'EOF'
           console.log('Node.js demo running on self-hosted runner');
           console.log('Node version:', process.version);
           EOF
+            cd node-demo
+            npm ci --no-audit --no-fund || npm install
+            npm test
+            node index.js
+            cd ..
+            BUILD_END=$(date +%s)
+            DURATION=$((BUILD_END - BUILD_START))
+            echo "### 📊 Node.js Demo 构建报告" >> $GITHUB_STEP_SUMMARY
+            echo "| 全流程耗时 | **${DURATION}s** |" >> $GITHUB_STEP_SUMMARY
+            echo "ARTIFACT_PATH=node-demo" >> $GITHUB_ENV
+            echo "::endgroup::"
+          fi
 
-      - name: Install (no private deps)
-        working-directory: node-demo
-        run: npm ci --no-audit --no-fund || npm install
-
-      - name: Run tests and start
-        working-directory: node-demo
-        run: |
-          npm test
-          node index.js
-
-      - name: Upload Node demo folder
+      - name: Upload Node test artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: node-demo
-          path: node-demo
+          name: node-build-output
+          path: ${{ env.ARTIFACT_PATH || 'README.md' }}
