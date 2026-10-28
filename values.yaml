@@ -1,0 +1,119 @@
+githubConfigUrl: "https://github.com/minesunny/dialect"
+
+githubConfigSecret: arc-github-app-secret
+
+scaleSetLabels:
+  - self-hosted
+  - linux
+  - x64
+
+maxRunners: 4
+minRunners: 2
+
+runnerScaleSetName: "self-hosted"
+
+template:
+  spec:
+    securityContext:
+      fsGroup: 1001
+    initContainers:
+      - name: init-dind-externals
+        image: ghcr.io/actions/actions-runner:2.337.0
+        command: ["cp", "-r", "/home/runner/externals/.", "/home/runner/tmpDir/"]
+        volumeMounts:
+          - name: dind-externals
+            mountPath: /home/runner/tmpDir
+      - name: dind
+        image: docker:29-dind
+        args:
+          - dockerd
+          - --host=unix:///var/run/docker.sock
+          - --group=123
+          - --registry-mirror=http://registry-cache.arc-runners.svc.cluster.local:5000
+          - --insecure-registry=registry-cache.arc-runners.svc.cluster.local:5000
+        securityContext:
+          privileged: true
+        restartPolicy: Always
+        startupProbe:
+          exec:
+            command:
+              - docker
+              - info
+          initialDelaySeconds: 0
+          failureThreshold: 24
+          periodSeconds: 5
+        volumeMounts:
+          - name: work
+            mountPath: /home/runner/_work
+          - name: dind-sock
+            mountPath: /var/run
+          - name: dind-externals
+            mountPath: /home/runner/externals
+    containers:
+      - name: runner
+        image: ghcr.io/actions/actions-runner:2.337.0
+        command: ["/home/runner/run.sh"]
+        resources:
+          requests:
+            cpu: "2000m"
+            memory: "3Gi"
+          limits:
+            cpu: "3000m"
+            memory: "4Gi"
+        env:
+          - name: ACTIONS_RUNNER_PRINT_LOG_TO_STDOUT
+            value: "true"
+          - name: DOCKER_HOST
+            value: unix:///var/run/docker.sock
+          - name: RUNNER_WAIT_FOR_DOCKER_IN_SECONDS
+            value: "120"
+          - name: GRADLE_RO_DEP_CACHE
+            value: /home/runner/gradle-ro-cache
+          - name: RUNNER_TOOL_CACHE
+            value: /home/runner/tool-cache
+          - name: GRADLE_USER_HOME
+            value: /home/runner/gradle-home
+        volumeMounts:
+          - name: dind-sock
+            mountPath: /var/run
+          - name: work
+            mountPath: /home/runner/_work
+          - name: gha-shared-cache
+            mountPath: /home/runner/.npm
+            subPath: npm
+          - name: gha-shared-cache
+            mountPath: /home/runner/tool-cache
+            subPath: _tool
+          - name: gha-shared-cache
+            mountPath: /home/runner/gradle-ro-cache
+            subPath: gradle-ro
+            readOnly: true
+          - name: gha-shared-cache
+            mountPath: /home/runner/.cargo
+            subPath: cargo
+          - name: gha-shared-cache
+            mountPath: /home/runner/.m2
+            subPath: m2
+          - name: gha-shared-cache
+            mountPath: /home/runner/.cache/pip
+            subPath: pip
+          - name: gha-shared-cache
+            mountPath: /home/runner/go/pkg
+            subPath: go
+          - name: gha-shared-cache
+            mountPath: /home/runner/gradle-home/wrapper/dists
+            subPath: gradle-wrapper
+          - name: gradle-home
+            mountPath: /home/runner/gradle-home
+    volumes:
+      - name: dind-sock
+        emptyDir: {}
+      - name: dind-externals
+        emptyDir: {}
+      - name: work
+        emptyDir: {}
+      - name: gradle-home
+        emptyDir: {}
+      - name: gha-shared-cache
+        persistentVolumeClaim:
+          claimName: gha-shared-cache

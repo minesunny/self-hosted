@@ -1,0 +1,141 @@
+githubConfigUrl: "https://github.com/minesunny/self-hosted"
+
+githubConfigSecret: arc-github-app-secret
+
+scaleSetLabels:
+  - self-hosted
+  - linux
+  - x64
+
+proxy:
+  http:
+    url: http://192.168.50.188:7890
+  https:
+    url: http://192.168.50.188:7890
+  noProxy:
+    - localhost
+    - 127.0.0.1
+    - .svc
+    - .cluster.local
+    - 10.0.0.0/8
+
+maxRunners: 7
+minRunners: 3
+
+runnerScaleSetName: "self-hosted"
+
+template:
+  spec:
+    initContainers:
+      - name: init-dind-externals
+        image: ghcr.io/actions/actions-runner:2.337.0
+        command: ["cp", "-r", "/home/runner/externals/.", "/home/runner/tmpDir/"]
+        volumeMounts:
+          - name: dind-externals
+            mountPath: /home/runner/tmpDir
+      - name: dind
+        image: docker:29-dind
+        args:
+          - dockerd
+          - --host=unix:///var/run/docker.sock
+          - --group=123
+        env:
+          - name: HTTP_PROXY
+            value: http://192.168.50.188:7890
+          - name: HTTPS_PROXY
+            value: http://192.168.50.188:7890
+          - name: NO_PROXY
+            value: localhost,127.0.0.1,.svc,.cluster.local,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+          - name: http_proxy
+            value: http://192.168.50.188:7890
+          - name: https_proxy
+            value: http://192.168.50.188:7890
+          - name: no_proxy
+            value: localhost,127.0.0.1,.svc,.cluster.local,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+        securityContext:
+          privileged: true
+        restartPolicy: Always
+        startupProbe:
+          exec:
+            command:
+              - docker
+              - info
+          initialDelaySeconds: 0
+          failureThreshold: 24
+          periodSeconds: 5
+        volumeMounts:
+          - name: work
+            mountPath: /home/runner/_work
+          - name: dind-sock
+            mountPath: /var/run
+          - name: dind-externals
+            mountPath: /home/runner/externals
+    containers:
+      - name: runner
+        image: ghcr.io/actions/actions-runner:2.337.0
+        command: ["/home/runner/run.sh"]
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "2Gi"
+          limits:
+            cpu: "500m"
+            memory: "2Gi"
+        env:
+          - name: ACTIONS_RUNNER_PRINT_LOG_TO_STDOUT
+            value: "true"
+          - name: DOCKER_HOST
+            value: unix:///var/run/docker.sock
+          - name: RUNNER_WAIT_FOR_DOCKER_IN_SECONDS
+            value: "120"
+          - name: JAVA_TOOL_OPTIONS
+            value: >-
+              -Dhttp.proxyHost=192.168.50.188 -Dhttp.proxyPort=7890
+              -Dhttps.proxyHost=192.168.50.188 -Dhttps.proxyPort=7890
+              -Dhttp.nonProxyHosts="localhost|127.0.0.1|10.*|172.16.*|192.168.*"
+          - name: GRADLE_OPTS
+            value: >-
+              -Dhttp.proxyHost=192.168.50.188 -Dhttp.proxyPort=7890
+              -Dhttps.proxyHost=192.168.50.188 -Dhttps.proxyPort=7890
+              -Dhttp.nonProxyHosts="localhost|127.0.0.1|10.*|172.16.*|192.168.*"
+          - name: GRADLE_RO_DEP_CACHE
+            value: /home/runner/gradle-ro-cache
+          - name: RUNNER_TOOL_CACHE
+            value: /home/runner/tool-cache
+        volumeMounts:
+          - name: dind-sock
+            mountPath: /var/run
+          - name: work
+            mountPath: /home/runner/_work
+          - name: gha-shared-cache
+            mountPath: /home/runner/.npm
+            subPath: npm
+          - name: gha-shared-cache
+            mountPath: /home/runner/tool-cache
+            subPath: _tool
+          - name: gha-shared-cache
+            mountPath: /home/runner/gradle-ro-cache
+            subPath: gradle-ro
+            readOnly: true
+          - name: gha-shared-cache
+            mountPath: /home/runner/.cargo
+            subPath: cargo
+          - name: gha-shared-cache
+            mountPath: /home/runner/.m2
+            subPath: m2
+          - name: gha-shared-cache
+            mountPath: /home/runner/.cache/pip
+            subPath: pip
+          - name: gha-shared-cache
+            mountPath: /home/runner/go/pkg
+            subPath: go
+    volumes:
+      - name: dind-sock
+        emptyDir: {}
+      - name: dind-externals
+        emptyDir: {}
+      - name: work
+        emptyDir: {}
+      - name: gha-shared-cache
+        persistentVolumeClaim:
+          claimName: gha-shared-cache

@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: gha-shared-cache
+spec:
+  capacity:
+    storage: 20Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: gha-shared-cache
+  hostPath:
+    path: /var/lib/github-actions-cache
+    type: DirectoryOrCreate
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gha-shared-cache
+  namespace: arc-runners
+spec:
+  storageClassName: gha-shared-cache
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 20Gi

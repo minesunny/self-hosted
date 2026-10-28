@@ -57,7 +57,7 @@ jobs:
         run: |
           TARGET="${{ inputs.project_target || 'spring-petclinic' }}"
           echo "Selected Target: $TARGET"
-          
+
           if [ "$TARGET" = "spring-petclinic" ]; then
             echo "::group::1. Cloning Spring PetClinic (depth=1)..."
             CLONE_START=$(date +%s)
@@ -66,10 +66,10 @@ jobs:
             CLONE_TIME=$((CLONE_END - CLONE_START))
             echo "Clone time: ${CLONE_TIME}s"
             echo "::endgroup::"
-            
+
             cd petclinic
             chmod +x gradlew
-            
+
             echo "::group::2. Compiling and Packaging with Gradle (bootJar)..."
             BUILD_START=$(date +%s)
             ./gradlew bootJar --no-daemon -x checkFormatAot -x checkFormatAotTest --stacktrace
@@ -78,10 +78,10 @@ jobs:
             TOTAL_TIME=$((BUILD_END - CLONE_START))
             echo "Build time: ${BUILD_TIME}s"
             echo "::endgroup::"
-            
+
             JAR_FILE=$(ls build/libs/*.jar | grep -v 'plain' | head -n1 || ls build/libs/*.jar | head -n1)
             JAR_SIZE=$(du -sh "$JAR_FILE" | awk '{print $1}')
-            
+
             echo "### 📊 Java 编译性能测试报告 (Spring PetClinic)" >> $GITHUB_STEP_SUMMARY
             echo "| 指标项 | 评测数据 |" >> $GITHUB_STEP_SUMMARY
             echo "|---|---|" >> $GITHUB_STEP_SUMMARY
@@ -90,7 +90,7 @@ jobs:
             echo "| 编译打包耗时 (bootJar) | **${BUILD_TIME}s** |" >> $GITHUB_STEP_SUMMARY
             echo "| 全流程总耗时 | **${TOTAL_TIME}s** |" >> $GITHUB_STEP_SUMMARY
             echo "| 生成产物大小 | **${JAR_SIZE}** ($JAR_FILE) |" >> $GITHUB_STEP_SUMMARY
-            
+
             cd ..
             echo "ARTIFACT_PATH=petclinic/build/libs" >> $GITHUB_ENV
           else
