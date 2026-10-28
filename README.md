@@ -2,6 +2,26 @@
 
 本仓库用于测试 GitHub Actions 的 Self-Hosted Runner CI 流水线。
 
+## k3s 上部署 ARC Runner
+
+仓库还包含 Actions Runner Controller (ARC) scale set 的部署配置。`values.yaml` 当前指向 `minesunny/dialect`，使用前请修改 `githubConfigUrl`、runner 数量和资源配置；`values.yaml.bak` 是另一套环境的历史配置，请勿直接用于生产环境。`DEPLOY.md` 记录了原环境的部署和故障排查过程，其中版本、代理和示例值可能与当前配置不同。
+
+- `deploy.sh`：安装或更新、停止、重启及查看 runner scale set；脚本使用 chart 版本 `0.15.0`。
+- `cache-pv.yaml`：单节点 hostPath 共享缓存。
+- `registry-cache.yaml`：Docker Hub 拉取缓存及其持久卷。
+- `values.yaml`：runner、Docker-in-Docker 和缓存挂载配置。
+
+使用前需准备 k3s、Helm、kubectl、Python 3 及 PyYAML，安装 ARC controller，并在 `arc-runners` 命名空间创建 GitHub App Secret（参见 [部署指南](DEPLOY.md)）。确认集群存储、网络和私有镜像缓存配置适合当前环境后执行：
+
+```bash
+bash deploy.sh start   # 安装或更新
+bash deploy.sh status  # 查看状态
+bash deploy.sh stop    # 停止，可能中断正在运行的任务
+bash deploy.sh restart # 停止后重新部署
+```
+
+停止操作保留持久卷、Secret 和共享 controller；切换目标仓库时，脚本会卸载旧 scale set 后重新安装。Helm 就绪不代表 runner 已成功连接 GitHub，请进一步检查监听器和 runner 状态。
+
 ## CI 工作流
 
 仓库内包含以下三个基于 Self-Hosted Linux Runner 的 CI 演示工作流（均存放于 `.github/workflows/` 目录下，文件必须带 `.yml` 或 `.yaml` 后缀）：
