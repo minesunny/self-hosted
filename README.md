@@ -36,6 +36,10 @@ bash deploy.sh restart # 停止后重新部署
    - 依赖标签: `[self-hosted, linux]`
    - 测试内容: 配置 JDK 21、安装 Gradle、构建 Java 项目并运行测试与产物验证。
 
+## CI 缓存
+
+Gradle 工作流在 self-hosted runner 上禁用 `setup-gradle` 的 GitHub Actions cache，使用 runner 上配置的本地 Gradle 缓存；在 GitHub-hosted runner 上启用该 action 的缓存。Node.js 和 Docker 演示目前没有配置 GitHub Actions cache。
+
 ## 触发机制
 
 工作流支持以下触发方式：
