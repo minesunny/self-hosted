@@ -8,13 +8,17 @@
 
 1. **Node.js CI** (`.github/workflows/nodejs-ci.yml`)
    - 依赖标签: `[self-hosted, linux]`
-   - 测试内容: 创建 Node.js 示例项目、安装依赖并运行测试，上传构建产物。
+   - 测试模式:
+     - **Benchmark 模式 (Fastify)**: 克隆 Fastify 仓库，执行 `npm install`、TypeScript 类型推导 (`test:types`) 以及全量单元测试 (`unit`)，压测异步 I/O 与 CPU 性能。
+     - **Demo 模式**: 快速验证基础 Node.js 运行环境。
 2. **Docker Build CI** (`.github/workflows/docker-build-ci.yml`)
    - 依赖标签: `[self-hosted, linux]`
-   - 测试内容: 构建 Python Demo 镜像、容器冒烟测试并导出 tar 产物。
+   - 测试内容: 检查 Docker Daemon 状态，构建镜像并进行冒烟测试（需 ARC 开启 DinD 或挂载 socket）。
 3. **Gradle Java CI** (`.github/workflows/gradle-java-ci.yml`)
    - 依赖标签: `[self-hosted, linux]`
-   - 测试内容: 配置 JDK 21、安装 Gradle、构建 Java 项目并运行测试与产物验证。
+   - 测试模式:
+     - **Benchmark 模式 (Spring PetClinic)**: 克隆 Spring 官方企业级示范项目，执行 Gradle 全量编译、注解处理、Spring 上下文集成测试以及 Spring Boot Fat JAR 打包。
+     - **Demo 模式**: 快速验证 JDK 与 Gradle 编译链路。
 
 ## 触发机制
 
